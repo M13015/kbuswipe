@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ma Chaîne Vidéo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@600;700&display=swap">
+<style>
+/* Concept: a phone-shaped vertical feed, centered on desktop and full-bleed on mobile; only the owner sees the upload controls. */
+:root {
+  --ground: #0d0e13;
+  --panel: #171922;
+  --ink: #f4f1f6;
+  --muted: #a19eb0;
+  --accent: #ff4f6b;
+  --line: rgba(255, 255, 255, 0.14);
+  --display: "Space Grotesk", system-ui, sans-serif;
+  --body: "Inter", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.45 var(--body); overflow: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage { position: relative; height: 100%; display: flex; justify-content: center; background: radial-gradient(circle at 50% 0%, #1a1c28 0%, var(--ground) 60%); }
+.feed { position: relative; width: 100%; max-width: 440px; height: 100%; overflow-y: scroll; scroll-snap-type: y mandatory; scrollbar-width: none; background: #000; overscroll-behavior: contain; }
+.feed::-webkit-scrollbar { display: none; }
+@media (min-width: 560px) { .feed { height: calc(100% - 24px); margin-block: 12px; border-radius: 22px; box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, 0.5); } }
+.clip { position: relative; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; background: #000; overflow: hidden; }
+.clip video, .clip .photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(0,0,0,.5) 0, transparent 22%, transparent 55%, rgba(0,0,0,.78) 100%); }
+.hit { position: absolute; inset: 0; border: 0; background: transparent; }
+.pausemark { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; border-radius: 50%; background: rgba(0,0,0,.45); display: grid; place-items: center; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.clip.paused .pausemark { opacity: 1; }
+.meta { position: absolute; left: 16px; right: 84px; bottom: 28px; pointer-events: none; }
+.meta .who { font: 600 16px var(--display); letter-spacing: .01em; }
+.meta .cap { margin: 4px 0 0; overflow-wrap: anywhere; text-shadow: 0 1px 8px rgba(0,0,0,.6); }
+.meta .when { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.rail { position: absolute; right: 10px; bottom: 28px; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.rbtn { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line); background: rgba(20, 21, 30, .55); display: grid; place-items: center; backdrop-filter: blur(6px); }
+.rbtn[aria-pressed="true"] { color: var(--accent); }
+.rbtn[aria-pressed="true"] svg { fill: var(--accent); }
+.rbtn.pop svg { animation: pop .3s ease; }
+@keyframes pop { 50% { transform: scale(1.35); } }
+.bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.18); pointer-events: none; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.top { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 440px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 8px 16px; z-index: 5; pointer-events: none; }
+.top > * { pointer-events: auto; }
+.top h1 { margin: 0; font: 700 19px var(--display); letter-spacing: -.01em; text-shadow: 0 1px 10px rgba(0,0,0,.7); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tools { display: flex; gap: 8px; }
+.pill { height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line); background: rgba(20, 21, 30, .6); backdrop-filter: blur(6px); display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.pill.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+.empty { height: 100%; display: grid; place-content: center; gap: 10px; padding: 32px; text-align: center; background: var(--ground); }
+.empty h2 { margin: 0; font: 700 22px var(--display); text-wrap: balance; }
+.empty p { margin: 0; color: var(--muted); max-width: 30ch; margin-inline: auto; text-wrap: pretty; }
+@media (prefers-reduced-motion: reduce) { .rbtn.pop svg { animation: none; } .pausemark { transition: none; } }
+</style>
+</head>
+<body>
+<div class="stage">
+  <main class="feed" id="feed" aria-label="Vidéos"></main>
+  <header class="top">
+    <h1 id="channel">Ma chaîne</h1>
+    <div class="tools">
+      <button class="pill" id="soundBtn" type="button" aria-pressed="false" aria-label="Activer le son"></button>
+    </div>
+  </header>
+</div>
+<script>
+const ICON = {
+  heart: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20.5s-8-4.9-8-11A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 8 2.5c0 6.1-8 11-8 11z"/></svg>',
+  play: '<svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><path d="M7 4.5v15l13-7.5z"/></svg>',
+  on: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>',
+  off: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>'
+};
+const feed = document.getElementById("feed");
+let muted = true, channel = "Ma chaîne", likes = {};
+try { likes = JSON.parse(localStorage.getItem("likes") || "{}"); } catch (e) {}
+function saveLikes() { try { localStorage.setItem("likes", JSON.stringify(likes)); } catch (e) {} }
+function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
+function fmtDate(d) { const t = new Date(d); return isNaN(t) ? "" : t.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }); }
+
+function renderSound() {
+  const b = document.getElementById("soundBtn");
+  b.innerHTML = (muted ? ICON.off : ICON.on) + "<span>" + (muted ? "Son coupé" : "Son actif") + "</span>";
+  b.setAttribute("aria-pressed", String(!muted));
+  b.setAttribute("aria-label", muted ? "Activer le son" : "Couper le son");
+  document.querySelectorAll(".clip video").forEach((v) => { v.muted = muted; });
+}
+
+function showEmpty(title, text) {
+  feed.textContent = "";
+  const e = el("div", "empty");
+  e.append(el("h2", null, title), el("p", null, text));
+  feed.append(e);
+}
+
+function render(videos) {
+  feed.textContent = "";
+  videos.forEach((v) => {
+    const c = el("section", "clip");
+    const isPhoto = /\.(jpe?g|png|webp|gif|avif)$/i.test(v.file);
+    let vid = null;
+    if (isPhoto) {
+      const img = document.createElement("img");
+      img.className = "photo"; img.src = "videos/" + encodeURIComponent(v.file); img.alt = v.caption || "";
+      img.loading = "lazy";
+      c.append(img, el("div", "shade"));
+    } else {
+      vid = document.createElement("video");
+      vid.src = "videos/" + encodeURIComponent(v.file) + "#t=0.1";
+      vid.loop = true; vid.muted = muted; vid.playsInline = true; vid.preload = "metadata";
+      vid.setAttribute("playsinline", "");
+      c.append(vid, el("div", "shade"));
+      const hit = el("button", "hit"); hit.type = "button"; hit.setAttribute("aria-label", "Lecture ou pause");
+      hit.addEventListener("click", () => {
+        if (vid.paused) { vid.play().catch(() => {}); c.classList.remove("paused"); } else { vid.pause(); c.classList.add("paused"); }
+      });
+      c.append(hit, el("div", "pausemark", ICON.play));
+    }
+    const meta = el("div", "meta");
+    const who = el("div", "who"); who.textContent = channel;
+    meta.append(who);
+    if (v.caption) { const cap = el("p", "cap"); cap.textContent = v.caption; meta.append(cap); }
+    if (v.date) { const when = el("div", "when"); when.textContent = fmtDate(v.date); meta.append(when); }
+    c.append(meta);
+    const rail = el("div", "rail");
+    const like = el("button", "rbtn", ICON.heart); like.type = "button";
+    like.setAttribute("aria-label", "J'aime"); like.setAttribute("aria-pressed", String(!!likes[v.file]));
+    like.addEventListener("click", () => {
+      likes[v.file] = !likes[v.file]; if (!likes[v.file]) delete likes[v.file]; saveLikes();
+      like.setAttribute("aria-pressed", String(!!likes[v.file]));
+      like.classList.remove("pop"); void like.offsetWidth; like.classList.add("pop");
+    });
+    rail.append(like);
+    c.append(rail);
+    if (vid) {
+      const bar = el("div", "bar", "<i></i>"); c.append(bar);
+      vid.addEventListener("timeupdate", () => { if (vid.duration) bar.firstChild.style.width = (vid.currentTime / vid.duration * 100) + "%"; });
+    }
+    feed.append(c);
+  });
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((en) => {
+      const c = en.target, v = c.querySelector("video");
+      if (!v) return;
+      if (en.isIntersecting && en.intersectionRatio >= 0.6) { c.classList.remove("paused"); v.muted = muted; v.play().catch(() => {}); }
+      else { v.pause(); if (en.intersectionRatio < 0.1) v.currentTime = 0; }
+    });
+  }, { root: feed, threshold: [0, 0.1, 0.6, 1] });
+  document.querySelectorAll(".clip").forEach((c) => io.observe(c));
+}
+
+document.getElementById("soundBtn").addEventListener("click", () => { muted = !muted; renderSound(); });
+renderSound();
+
+const REPO = "m13015/KBU-SWIPE"; // propriétaire/dépôt GitHub
+const MEDIA = /\.(mp4|webm|mov|m4v|jpe?g|png|webp|gif|avif)$/i;
+
+function repoPath() {
+  if (REPO) return REPO;
+  const host = location.hostname;
+  if (!host.endsWith(".github.io")) return "";
+  const owner = host.split(".")[0];
+  const first = location.pathname.split("/").filter(Boolean)[0];
+  return owner + "/" + (first && !/\.html?$/i.test(first) ? first : owner + ".github.io");
+}
+
+async function readMeta() {
+  try {
+    const r = await fetch("videos.json", { cache: "no-cache" });
+    return r.ok ? await r.json() : {};
+  } catch (e) { return {}; }
+}
+
+async function listFiles() {
+  const repo = repoPath();
+  if (!repo) throw new Error("repo");
+  const r = await fetch("https://api.github.com/repos/" + repo + "/contents/videos", { headers: { Accept: "application/vnd.github+json" } });
+  if (!r.ok) throw new Error(r.status);
+  const items = await r.json();
+  return items.filter((i) => i.type === "file" && MEDIA.test(i.name)).map((i) => i.name);
+}
+
+(async () => {
+  const meta = await readMeta();
+  channel = meta.channel || channel;
+  document.getElementById("channel").textContent = channel;
+  document.title = channel;
+  const info = {};
+  (meta.videos || []).forEach((v) => { info[v.file] = v; });
+  let names;
+  try {
+    names = await listFiles();
+    names.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
+  } catch (e) {
+    names = (meta.videos || []).map((v) => v.file);
+  }
+  if (!names.length) { showEmpty("Bientôt de nouvelles vidéos", "Cette chaîne n'a pas encore publié. Reviens un peu plus tard."); return; }
+  render(names.map((n) => Object.assign({ file: n }, info[n] || {})));
+})();
+</script>
+</body>
+</html>
